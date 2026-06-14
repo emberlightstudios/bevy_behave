@@ -92,6 +92,8 @@ pub enum Behave {
     /// If the first child succeeds, run the second child.
     /// (otherwise, run the third child, if present)
     IfThen,
+    /// Runs all children in parallel, succeeding if all succeed, failing if any fail.
+    WhenAll,
 }
 
 impl std::fmt::Display for Behave {
@@ -108,6 +110,7 @@ impl std::fmt::Display for Behave {
             Behave::TriggerReq(t) => write!(f, "Trigger({})", t.type_name()),
             Behave::Forever => write!(f, "Forever"),
             Behave::IfThen => write!(f, "IfThen"),
+            Behave::WhenAll => write!(f, "WhenAll"),
         }
     }
 }
@@ -148,6 +151,7 @@ impl Behave {
             Behave::Forever => 1..=usize::MAX,
             Behave::While => 1..=2,
             Behave::IfThen => 2..=3,
+            Behave::WhenAll => 0..=usize::MAX,
             Behave::Invert => 1..=1,
             // Task nodes have no children:
             Behave::Wait(_) => 0..=0,
@@ -205,6 +209,9 @@ pub(crate) enum BehaveNode {
     IfThen {
         status: Option<BehaveNodeStatus>,
     },
+    WhenAll {
+        status: Option<BehaveNodeStatus>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -235,6 +242,7 @@ impl BehaveNode {
             BehaveNode::AlwaysFail { status } => status,
             BehaveNode::While { status } => status,
             BehaveNode::IfThen { status } => status,
+            BehaveNode::WhenAll { status } => status,
         }
     }
     fn status_mut(&mut self) -> &mut Option<BehaveNodeStatus> {
@@ -250,6 +258,7 @@ impl BehaveNode {
             BehaveNode::AlwaysFail { status } => status,
             BehaveNode::While { status } => status,
             BehaveNode::IfThen { status } => status,
+            BehaveNode::WhenAll { status } => status,
         }
     }
 }
@@ -269,6 +278,7 @@ impl std::fmt::Display for BehaveNode {
             BehaveNode::AlwaysFail { .. } => write!(f, "AlwaysFail")?,
             BehaveNode::While { .. } => write!(f, "While")?,
             BehaveNode::IfThen { .. } => write!(f, "IfThen")?,
+            BehaveNode::WhenAll { .. } => write!(f, "WhenAll")?,
         }
         match self.status() {
             Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
@@ -331,6 +341,9 @@ impl BehaveNode {
             BehaveNode::IfThen { status } => {
                 *status = None;
             }
+            BehaveNode::WhenAll { status } => {
+                *status = None;
+            }
         }
     }
     pub(crate) fn new(behave: Behave) -> Self {
@@ -362,6 +375,7 @@ impl BehaveNode {
             Behave::AlwaysSucceed => Self::AlwaysSucceed { status: None },
             Behave::AlwaysFail => Self::AlwaysFail { status: None },
             Behave::IfThen => Self::IfThen { status: None },
+            Behave::WhenAll => Self::WhenAll { status: None },
         }
     }
 }
@@ -612,7 +626,11 @@ fn tick_node(
             BehaveNodeStatus::AwaitingTrigger
         }
         #[rustfmt::skip]
-        DynamicEntity{ task_status: EntityTaskStatus::Started(_), .. } => unreachable!("Short circuit should prevent this while AwaitingTrigger"),
+        DynamicEntity{ task_status: EntityTaskStatus::Started(_), .. } => {
+            // Can be ticked multiple times while awaiting a trigger (e.g. under WhenAll).
+            // Stay in AwaitingTrigger until a status report arrives.
+            BehaveNodeStatus::AwaitingTrigger
+        }
         // this is when a trigger has reported a result, and we need to process it and update status
         #[rustfmt::skip]
         DynamicEntity {task_status: EntityTaskStatus::Complete(true), status, ..} => {
@@ -697,6 +715,60 @@ fn tick_node(
             };
             *status = Some(final_status);
             final_status
+        }
+        WhenAll { .. } => {
+            *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+            let mut any_pending = false;
+            let mut any_failed = false;
+
+            let Some(mut child) = n.first_child() else {
+                *n.value().status_mut() = Some(BehaveNodeStatus::Success);
+                return BehaveNodeStatus::Success;
+            };
+
+            loop {
+                let child_status = child.value().status().clone();
+                let child_done = match child_status {
+                    Some(BehaveNodeStatus::Success) => true,
+                    Some(BehaveNodeStatus::Failure) => {
+                        any_failed = true;
+                        true
+                    }
+                    _ => false,
+                };
+
+                if !child_done {
+                    let result = tick_node(&mut child, commands, tick_ctx);
+                    match result {
+                        BehaveNodeStatus::Success => {}
+                        BehaveNodeStatus::Failure => {
+                            any_failed = true;
+                        }
+                        _ => {
+                            any_pending = true;
+                        }
+                    }
+                }
+
+                if let Ok(next_child) = child.into_next_sibling() {
+                    child = next_child;
+                } else {
+                    break;
+                }
+            }
+
+            if any_pending {
+                *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+                BehaveNodeStatus::Running
+            } else {
+                let final_status = if any_failed {
+                    BehaveNodeStatus::Failure
+                } else {
+                    BehaveNodeStatus::Success
+                };
+                *n.value().status_mut() = Some(final_status);
+                final_status
+            }
         }
     }
 }
