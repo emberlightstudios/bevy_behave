@@ -94,6 +94,8 @@ pub enum Behave {
     IfThen,
     /// Runs all children in parallel, succeeding if all succeed, failing if any fail.
     WhenAll,
+    /// Runs all children in parallel, succeeding if any child succeeds, failing if all fail.
+    WhenAny,
 }
 
 impl std::fmt::Display for Behave {
@@ -111,6 +113,7 @@ impl std::fmt::Display for Behave {
             Behave::Forever => write!(f, "Forever"),
             Behave::IfThen => write!(f, "IfThen"),
             Behave::WhenAll => write!(f, "WhenAll"),
+            Behave::WhenAny => write!(f, "WhenAny"),
         }
     }
 }
@@ -152,6 +155,7 @@ impl Behave {
             Behave::While => 1..=2,
             Behave::IfThen => 2..=3,
             Behave::WhenAll => 0..=usize::MAX,
+            Behave::WhenAny => 0..=usize::MAX,
             Behave::Invert => 1..=1,
             // Task nodes have no children:
             Behave::Wait(_) => 0..=0,
@@ -212,6 +216,9 @@ pub(crate) enum BehaveNode {
     WhenAll {
         status: Option<BehaveNodeStatus>,
     },
+    WhenAny {
+        status: Option<BehaveNodeStatus>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -243,6 +250,7 @@ impl BehaveNode {
             BehaveNode::While { status } => status,
             BehaveNode::IfThen { status } => status,
             BehaveNode::WhenAll { status } => status,
+            BehaveNode::WhenAny { status } => status,
         }
     }
     fn status_mut(&mut self) -> &mut Option<BehaveNodeStatus> {
@@ -259,6 +267,7 @@ impl BehaveNode {
             BehaveNode::While { status } => status,
             BehaveNode::IfThen { status } => status,
             BehaveNode::WhenAll { status } => status,
+            BehaveNode::WhenAny { status } => status,
         }
     }
 }
@@ -279,6 +288,7 @@ impl std::fmt::Display for BehaveNode {
             BehaveNode::While { .. } => write!(f, "While")?,
             BehaveNode::IfThen { .. } => write!(f, "IfThen")?,
             BehaveNode::WhenAll { .. } => write!(f, "WhenAll")?,
+            BehaveNode::WhenAny { .. } => write!(f, "WhenAny")?,
         }
         match self.status() {
             Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
@@ -344,6 +354,9 @@ impl BehaveNode {
             BehaveNode::WhenAll { status } => {
                 *status = None;
             }
+            BehaveNode::WhenAny { status } => {
+                *status = None;
+            }
         }
     }
     pub(crate) fn new(behave: Behave) -> Self {
@@ -376,6 +389,7 @@ impl BehaveNode {
             Behave::AlwaysFail => Self::AlwaysFail { status: None },
             Behave::IfThen => Self::IfThen { status: None },
             Behave::WhenAll => Self::WhenAll { status: None },
+            Behave::WhenAny => Self::WhenAny { status: None },
         }
     }
 }
@@ -768,6 +782,51 @@ fn tick_node(
                 };
                 *n.value().status_mut() = Some(final_status);
                 final_status
+            }
+        }
+        WhenAny { .. } => {
+            let mut all_failed = true;
+
+            let Some(mut child) = n.first_child() else {
+                *n.value().status_mut() = Some(BehaveNodeStatus::Success);
+                return BehaveNodeStatus::Success;
+            };
+
+            loop {
+                let child_status = child.value().status().clone();
+                match child_status {
+                    Some(BehaveNodeStatus::Success) => {
+                        *n.value().status_mut() = Some(BehaveNodeStatus::Success);
+                        return BehaveNodeStatus::Success;
+                    }
+                    Some(BehaveNodeStatus::Failure) => {}
+                    _ => {
+                        all_failed = false;
+                        let result = tick_node(&mut child, commands, tick_ctx);
+                        match result {
+                            BehaveNodeStatus::Success => {
+                                *n.value().status_mut() = Some(BehaveNodeStatus::Success);
+                                return BehaveNodeStatus::Success;
+                            }
+                            BehaveNodeStatus::Failure => {}
+                            _ => {}
+                        }
+                    }
+                }
+
+                if let Ok(next_child) = child.into_next_sibling() {
+                    child = next_child;
+                } else {
+                    break;
+                }
+            }
+
+            if all_failed {
+                *n.value().status_mut() = Some(BehaveNodeStatus::Failure);
+                BehaveNodeStatus::Failure
+            } else {
+                *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+                BehaveNodeStatus::Running
             }
         }
     }

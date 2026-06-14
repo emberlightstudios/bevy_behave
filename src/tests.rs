@@ -462,6 +462,147 @@ fn test_when_all_with_wait_nodes() {
     app.run();
 }
 
+#[test]
+fn test_when_any_first_succeeds() {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    #[derive(Event, Clone)]
+    struct A;
+    #[derive(Event, Clone)]
+    struct B;
+
+    fn on_a(trigger: On<BehaveTrigger<A>>, mut cmd: Commands) {
+        cmd.trigger(trigger.ctx().success());
+    }
+
+    let mut app = App::new();
+    app.add_plugins((
+        BehavePlugin::default().with_synchronous(),
+        MinimalPlugins,
+        bevy::log::LogPlugin::default(),
+    ))
+    .add_observer(on_a)
+    .add_systems(Startup, |mut cmd: Commands| {
+        let tree = behave! {
+            Behave::WhenAny => {
+                Behave::trigger(A),
+                Behave::trigger(B),
+            }
+        };
+        cmd.spawn(BehaveTree::new(tree));
+    })
+    .add_observer(
+        |t: On<Add, BehaveFinished>,
+         q: Query<&BehaveFinished>,
+         mut exit: MessageWriter<AppExit>| {
+            let f = q.get(t.event().entity).unwrap();
+            assert!(f.0, "WhenAny should succeed when first child succeeds");
+            exit.write(AppExit::Success);
+        },
+    );
+    app.run();
+}
+
+#[test]
+fn test_when_any_all_fail() {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    #[derive(Event, Clone)]
+    struct A;
+    #[derive(Event, Clone)]
+    struct B;
+    #[derive(Event, Clone)]
+    struct C;
+
+    fn on_a(trigger: On<BehaveTrigger<A>>, mut cmd: Commands) {
+        cmd.trigger(trigger.ctx().failure());
+    }
+    fn on_b(trigger: On<BehaveTrigger<B>>, mut cmd: Commands) {
+        cmd.trigger(trigger.ctx().failure());
+    }
+    fn on_c(trigger: On<BehaveTrigger<C>>, mut cmd: Commands) {
+        cmd.trigger(trigger.ctx().failure());
+    }
+
+    let mut app = App::new();
+    app.add_plugins((
+        BehavePlugin::default().with_synchronous(),
+        MinimalPlugins,
+        bevy::log::LogPlugin::default(),
+    ))
+    .add_observer(on_a)
+    .add_observer(on_b)
+    .add_observer(on_c)
+    .add_systems(Startup, |mut cmd: Commands| {
+        let tree = behave! {
+            Behave::WhenAny => {
+                Behave::trigger(A),
+                Behave::trigger(B),
+                Behave::trigger(C),
+            }
+        };
+        cmd.spawn(BehaveTree::new(tree));
+    })
+    .add_observer(
+        |t: On<Add, BehaveFinished>,
+         q: Query<&BehaveFinished>,
+         mut exit: MessageWriter<AppExit>| {
+            let f = q.get(t.event().entity).unwrap();
+            assert!(!f.0, "WhenAny should fail when all children fail");
+            exit.write(AppExit::Success);
+        },
+    );
+    app.run();
+}
+
+#[test]
+fn test_when_any_mixed() {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    #[derive(Event, Clone)]
+    struct Fast;
+    #[derive(Event, Clone)]
+    struct Slow;
+
+    fn on_fast(trigger: On<BehaveTrigger<Fast>>, mut cmd: Commands) {
+        cmd.trigger(trigger.ctx().success());
+    }
+    // Slow intentionally doesn't respond — WhenAny should short-circuit on Fast's success
+
+    let mut app = App::new();
+    app.add_plugins((
+        BehavePlugin::default().with_synchronous(),
+        MinimalPlugins,
+        bevy::log::LogPlugin::default(),
+    ))
+    .add_observer(on_fast)
+    .add_systems(Startup, |mut cmd: Commands| {
+        let tree = behave! {
+            Behave::WhenAny => {
+                Behave::trigger(Fast),
+                Behave::trigger(Slow),
+            }
+        };
+        cmd.spawn(BehaveTree::new(tree));
+    })
+    .add_observer(
+        |t: On<Add, BehaveFinished>,
+         q: Query<&BehaveFinished>,
+         mut exit: MessageWriter<AppExit>| {
+            let f = q.get(t.event().entity).unwrap();
+            assert!(
+                f.0,
+                "WhenAny should succeed when any child succeeds (mixed)"
+            );
+            exit.write(AppExit::Success);
+        },
+    );
+    app.run();
+}
+
 /// asserts the tree.to_string matches the expected string, accounting for whitespace/indentation
 fn assert_tree(s: &str, tree: Tree<Behave>) {
     // strip and tidy any indent spaces in the expected output so we can easily compare
