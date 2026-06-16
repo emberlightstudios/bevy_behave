@@ -1,5 +1,5 @@
 use crate::{
-    BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus, prelude::*, tick_node,
+    prelude::*, tick_node, BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus,
 };
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
@@ -398,10 +398,10 @@ impl BehaveTree {
         let val = node.value();
         match val {
             BehaveNode::DynamicEntity { task_status, .. } if ctx.is_for_entity() => {
-                // extract the entity that was running this node, so we can despawn it
                 let task_entity = match task_status {
                     EntityTaskStatus::Started(e) => Some(*e),
-                    _ => {
+                    EntityTaskStatus::Complete(_) => None,
+                    EntityTaskStatus::NotStarted => {
                         warn!("Given node ({node_id:?}) result for a non-spawned entity node?");
                         None
                     }
