@@ -198,7 +198,10 @@ fn tick_trees_sync(
 ) {
     let mut sanity_counter = 0;
     loop {
-        let (mut query, q_parents, mut commands, time) = params.get_mut(world);
+        let Ok((mut query, q_parents, mut commands, time)) = params.get_mut(world) else {
+            error!("Failed to get system parameters for tree tick");
+            return;
+        };
         if query.is_empty() {
             return;
         }

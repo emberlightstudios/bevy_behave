@@ -54,7 +54,8 @@ where
 }
 
 impl EntityCommand for DynamicSpawnWrapper {
-    fn apply(self, entity: EntityWorldMut) {
+    type Out = ();
+    fn apply(self, entity: EntityWorldMut) -> Self::Out {
         self.bundel_fn.apply_dyn_bundle(entity, self.ctx);
     }
 }
