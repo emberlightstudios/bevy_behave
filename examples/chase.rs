@@ -1,4 +1,5 @@
 use bevy::{
+    camera::Hdr,
     color::palettes::css,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     post_process::bloom::Bloom,
@@ -190,7 +191,9 @@ fn on_randomize_colour(
     let _randomise_color: &RandomizeColour = ev.inner();
     let ctx: &BehaveCtx = ev.ctx();
     // info!("Randomizing color: {ctx:?}");
-    let mut appearance = q.get_mut(ctx.target_entity()).unwrap();
+    let Ok(mut appearance) = q.get_mut(ctx.target_entity()) else {
+        return;
+    };
     appearance.next();
     // report success
     commands.trigger(ctx.success());
@@ -204,8 +207,13 @@ fn wait_system(
     mut commands: Commands,
 ) {
     for (wait, ctx) in &q {
-        let player_transform = q_player_transforms.get(wait.player).unwrap();
-        let (enemy_transform, vision_radius) = q_enemy_transforms.get(ctx.target_entity()).unwrap();
+        let Ok(player_transform) = q_player_transforms.get(wait.player) else {
+            continue;
+        };
+        let Ok((enemy_transform, vision_radius)) = q_enemy_transforms.get(ctx.target_entity())
+        else {
+            continue;
+        };
         let distance_to_player = enemy_transform
             .translation
             .xy()
@@ -225,8 +233,12 @@ fn onadd_move_towards_player(
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.event().entity).unwrap();
-    let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
+    let Ok(ctx) = q.get(trigger.event().entity) else {
+        return;
+    };
+    let Ok(mut appearance) = q_target.get_mut(ctx.target_entity()) else {
+        return;
+    };
     appearance.show_vision = true;
 }
 
@@ -235,8 +247,13 @@ fn onremove_move_towards_player(
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.event().entity).unwrap();
-    let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
+    let Ok(ctx) = q.get(trigger.event().entity) else {
+        return;
+    };
+    // The target enemy may already be despawned when we recursively despawn the hierarchy.
+    let Ok(mut appearance) = q_target.get_mut(ctx.target_entity()) else {
+        return;
+    };
     appearance.show_vision = false;
 }
 
@@ -251,9 +268,14 @@ fn move_system(
     time: Res<Time>,
 ) {
     for (move_towards, ctx) in &q {
-        let player_transform = q_player_transforms.get(move_towards.player).unwrap();
-        let (mut own_transform, vision_radius) =
-            q_own_transforms.get_mut(ctx.target_entity()).unwrap();
+        let Ok(player_transform) = q_player_transforms.get(move_towards.player) else {
+            continue;
+        };
+        let Ok((mut own_transform, vision_radius)) =
+            q_own_transforms.get_mut(ctx.target_entity())
+        else {
+            continue;
+        };
         let direction_to_player =
             (player_transform.translation.xy() - own_transform.translation.xy()).normalize();
         let movement_amount = direction_to_player * move_towards.speed * time.delta_secs();

@@ -120,6 +120,23 @@ pub struct BehaveSupervisorEntity(pub Entity);
 #[derive(Component)]
 pub(crate) struct BehaveAwaitingTrigger;
 
+impl BehaveTargetEntity {
+    fn resolve(
+        &self,
+        bt_entity: Entity,
+        opt_parent: Option<&ChildOf>,
+        q_parents: &Query<&ChildOf>,
+    ) -> Entity {
+        match self {
+            BehaveTargetEntity::Parent => opt_parent
+                .map(|p| p.parent())
+                .unwrap_or(Entity::PLACEHOLDER),
+            BehaveTargetEntity::Entity(entity) => *entity,
+            BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
+        }
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn tick_trees(
     mut query: Query<
@@ -137,13 +154,7 @@ fn tick_trees(
     time: Res<Time>,
 ) {
     for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
-        let target_entity = match target_entity {
-            BehaveTargetEntity::Parent => opt_parent
-                .map(|p| p.parent())
-                .unwrap_or(Entity::PLACEHOLDER),
-            BehaveTargetEntity::Entity(e) => *e,
-            BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
-        };
+        let target_entity = target_entity.resolve(bt_entity, opt_parent, &q_parents);
         let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
             .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
         let tick_result = bt.tick(&mut commands, &tick_ctx);
@@ -199,7 +210,6 @@ fn tick_trees_sync(
     let mut sanity_counter = 0;
     loop {
         let Ok((mut query, q_parents, mut commands, time)) = params.get_mut(world) else {
-            error!("Failed to get system parameters for tree tick");
             return;
         };
         if query.is_empty() {
@@ -215,13 +225,7 @@ fn tick_trees_sync(
 
         let mut trees_processed = 0;
         for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
-            let target_entity = match target_entity {
-                BehaveTargetEntity::Parent => opt_parent
-                    .map(|p| p.parent())
-                    .unwrap_or(Entity::PLACEHOLDER),
-                BehaveTargetEntity::Entity(e) => *e,
-                BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
-            };
+            let target_entity = target_entity.resolve(bt_entity, opt_parent, &q_parents);
             let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
                 .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
             let tick_result = bt.tick(&mut commands, &tick_ctx);
