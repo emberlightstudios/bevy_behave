@@ -1,5 +1,5 @@
 use crate::{
-    prelude::*, tick_node, BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus,
+    BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus, prelude::*, tick_node,
 };
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
