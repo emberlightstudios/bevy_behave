@@ -129,7 +129,7 @@ fn test_root_ancestor_with_nested_trees() {
         info!("spawned tree with id: {}", id);
     });
     app.add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<(&BehaveFinished, &BehaveCtx)>,
          mut exit: MessageWriter<AppExit>,
          mut commands: Commands| {
@@ -257,7 +257,7 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
 
     // run once the topmost tree completes.
     fn final_tree_finished_checker(
-        _t: On<Add, BehaveFinished>,
+        _t: On<Add<BehaveFinished>>,
         mut exit: MessageWriter<AppExit>,
         frame: Res<Frame>,
         expected_final_frame: Res<ExpectedFinalFrame>,
@@ -295,7 +295,7 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
         info!("spawned tree with id: {}", id);
     });
     app.add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<(&BehaveFinished, &BehaveCtx)>,
          mut commands: Commands| {
             let Ok((finished, ctx)) = q.get(t.event().entity) else {
@@ -354,7 +354,7 @@ fn test_when_all_all_succeed() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          mut exit: MessageWriter<AppExit>| {
             let f = q.get(t.event().entity).unwrap();
@@ -407,7 +407,7 @@ fn test_when_all_one_fails() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          mut exit: MessageWriter<AppExit>| {
             let f = q.get(t.event().entity).unwrap();
@@ -449,7 +449,7 @@ fn test_when_all_with_wait_nodes() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          frame: Res<FrameCount>,
          mut exit: MessageWriter<AppExit>| {
@@ -493,7 +493,7 @@ fn test_when_any_first_succeeds() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          mut exit: MessageWriter<AppExit>| {
             let f = q.get(t.event().entity).unwrap();
@@ -546,7 +546,7 @@ fn test_when_any_all_fail() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          mut exit: MessageWriter<AppExit>| {
             let f = q.get(t.event().entity).unwrap();
@@ -589,7 +589,7 @@ fn test_when_any_mixed() {
         cmd.spawn(BehaveTree::new(tree));
     })
     .add_observer(
-        |t: On<Add, BehaveFinished>,
+        |t: On<Add<BehaveFinished>>,
          q: Query<&BehaveFinished>,
          mut exit: MessageWriter<AppExit>| {
             let f = q.get(t.event().entity).unwrap();
